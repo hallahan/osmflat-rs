@@ -1,0 +1,5 @@
+cargo run --release -- /Users/n/geodata/extracts/california.osm.pbf /Users/n/geodata/flatdata/california
+cargo run --release -- /Users/n/geodata/extracts/santacruz.pbf /Users/n/geodata/flatdata/santacruz
+
+flatdata-generator -s ../flatdata/osm.flatdata -g rust -O src/exp_gen.rs 
+cargo run --example debug /Users/n/geodata/flatdata/santacruz n

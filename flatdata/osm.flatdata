@@ -83,6 +83,9 @@ struct Node {
     lat: i64 : 40;
     /// Longitude (scaled with `COORD_SCALE`).
     lon: i64 : 40;
+
+    h: u64: 64;
+
     /**
      * Range of tags attached to this node.
      *

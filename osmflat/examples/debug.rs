@@ -60,6 +60,8 @@ struct Node<'ar> {
     #[allow(unused)]
     lon: FixedI64,
     #[allow(unused)]
+    h: u64,
+    #[allow(unused)]
     tags: Vec<(&'ar str, &'ar str)>,
 }
 
@@ -188,6 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 id: node.id(),
                 lat: FixedI64(node.lat()),
                 lon: FixedI64(node.lon()),
+                h: node.h(),
                 tags: collect_utf8_tags(node.tags()),
             };
 

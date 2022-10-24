@@ -21,6 +21,7 @@ use std::collections::{hash_map, HashMap};
 use std::fs::File;
 use std::io;
 use std::str;
+use fast_hilbert::xy2h;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -168,10 +169,16 @@ fn serialize_dense_nodes(
             let node = nodes.grow()?;
             node.set_id(id);
 
+            // this is dm7 32bit int
             lat += dense_nodes.lat[i];
             lon += dense_nodes.lon[i];
             node.set_lat(lat_offset + (i64::from(granularity) * lat));
             node.set_lon(lon_offset + (i64::from(granularity) * lon));
+
+            let u_lon = (lon as i32 - i32::MIN) as u32;
+            let u_lat = (lat as i32 - i32::MIN) as u32;
+            let h = xy2h(u_lon, u_lat);
+            node.set_h(h);
 
             if tags_offset < dense_nodes.keys_vals.len() {
                 node.set_tag_first_idx(tags.next_index());
