@@ -14,11 +14,11 @@ use colored::*;
 use flatdata::FileResourceStorage;
 use itertools::Itertools;
 use log::info;
-use memmap2::Mmap;
+use memmap2::{Mmap, MmapMut};
 use pbr::ProgressBar;
 
 use std::collections::{hash_map, HashMap};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::str;
 use fast_hilbert::xy2h;
@@ -145,6 +145,7 @@ fn serialize_dense_nodes(
     nodes_id_to_idx: &mut ids::IdTableBuilder,
     stringtable: &mut StringTable,
     tags: &mut TagSerializer,
+    mmap: &mut MmapMut
 ) -> Result<Stats, Error> {
     let mut stats = Stats::default();
     let string_refs = add_string_table(&block.stringtable, stringtable)?;
@@ -179,6 +180,9 @@ fn serialize_dense_nodes(
             let u_lat = (lat as i32 - i32::MIN) as u32;
             let h = xy2h(u_lon, u_lat);
             node.set_h(h);
+
+            // https://doc.rust-lang.org/stable/std/mem/fn.transmute.html#alternatives
+            
 
             if tags_offset < dense_nodes.keys_vals.len() {
                 node.set_tag_first_idx(tags.next_index());
@@ -373,11 +377,13 @@ fn serialize_dense_node_blocks(
     tags: &mut TagSerializer,
     stringtable: &mut StringTable,
     stats: &mut Stats,
+    mmap: &mut MmapMut
 ) -> Result<ids::IdTable, Error> {
     let mut nodes_id_to_idx = ids::IdTableBuilder::new();
     let mut nodes = builder.start_nodes()?;
     let mut pb = ProgressBar::new(blocks.len() as u64);
     pb.message("Converting dense nodes...");
+    let mut mmap = mmap;
 
     parallel::parallel_process(
         blocks.into_iter(),
@@ -389,6 +395,7 @@ fn serialize_dense_node_blocks(
                 &mut nodes_id_to_idx,
                 stringtable,
                 tags,
+                &mut mmap
             )?;
 
             pb.inc();
@@ -518,6 +525,14 @@ fn run(args: args::Args) -> Result<(), Error> {
     let input_file = File::open(&args.input)?;
     let input_data = unsafe { Mmap::map(&input_file)? };
 
+    let mut file = OpenOptions::new().read(true).write(true).create(true).open("/Users/n/geodata/flatdata/santacruz/node_h_idx.bin")?;
+    // Nodes: 2003898
+    // Ways: 186317
+    // Relations: 3244
+    // 32,062,368 needed for 2 x 64 bit array of count of nodes
+    file.set_len(32_062_368);
+    let mut mmap = unsafe { MmapMut::map_mut(&file)? };
+
     let storage = FileResourceStorage::new(args.output.clone());
     let builder = osmflat::OsmBuilder::new(storage)?;
 
@@ -573,6 +588,7 @@ fn run(args: args::Args) -> Result<(), Error> {
         &mut tags,
         &mut stringtable,
         &mut stats,
+        &mut mmap,
     )?;
 
     let ways_id_to_idx = serialize_way_blocks(

@@ -1,7 +1,14 @@
 cargo run --release -- /Users/n/geodata/extracts/california.osm.pbf /Users/n/geodata/flatdata/california
 cargo run --release -- /Users/n/geodata/extracts/santacruz.pbf /Users/n/geodata/flatdata/santacruz
+rm -rf /Users/n/geodata/flatdata/santacruz/*
 
 flatdata-generator -s ../flatdata/osm.flatdata -g rust -O src/exp_gen.rs 
 cargo run --example debug /Users/n/geodata/flatdata/santacruz n
 
 https://github.com/danburkert/memmap-rs/issues/90
+
+
+https://doc.rust-lang.org/std/fs/struct.File.html#method.set_len
+https://docs.rs/memmap2/latest/memmap2/struct.MmapOptions.html#method.map_mut
+
+https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8
