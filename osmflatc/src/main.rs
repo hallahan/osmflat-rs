@@ -22,6 +22,7 @@ use std::collections::hash_map;
 use std::fs::File;
 use std::io;
 use std::str;
+use fast_hilbert::xy2h;
 
 use logging_timer::time;
 
@@ -172,6 +173,7 @@ fn serialize_dense_nodes(
     nodes: &mut flatdata::ExternalVector<osmflat::Node>,
     node_ids: &mut Option<flatdata::ExternalVector<osmflat::Id>>,
     nodes_id_to_idx: &mut ids::IdTableBuilder,
+    hilbert_node_pairs: &mut Option<flatdata::ExternalVector<osmflat::HilbertNodePair>>,
     stringtable: &mut StringTable,
     tags: &mut TagSerializer,
 ) -> Result<Stats, Error> {
@@ -202,12 +204,19 @@ fn serialize_dense_nodes(
 
             lat += dense_nodes.lat[i];
             lon += dense_nodes.lon[i];
-            node.set_lat(
-                ((lat_offset + (i64::from(pbf_granularity) * lat)) / granularity as i64) as i32,
-            );
-            node.set_lon(
-                ((lon_offset + (i64::from(pbf_granularity) * lon)) / granularity as i64) as i32,
-            );
+            let lat_dm7 = ((lat_offset + (i64::from(pbf_granularity) * lat)) / granularity as i64) as i32;
+            let lon_dm7 = ((lon_offset + (i64::from(pbf_granularity) * lon)) / granularity as i64) as i32;
+            node.set_lat(lat_dm7);
+            node.set_lon(lon_dm7);
+
+            if let Some(pairs) = hilbert_node_pairs {
+                let u_lon = (lon_dm7- i32::MIN) as u32;
+                let u_lat = (lat_dm7 as i32 - i32::MIN) as u32;
+                let pair = pairs.grow()?;
+                pair.set_i(index);
+                let h = xy2h(u_lon, u_lat);
+                pair.set_h(h);
+            }
 
             if tags_offset < dense_nodes.keys_vals.len() {
                 node.set_tag_first_idx(tags.next_index());
@@ -407,6 +416,7 @@ fn serialize_dense_node_blocks(
     builder: &osmflat::OsmBuilder,
     granularity: i32,
     mut node_ids: Option<flatdata::ExternalVector<osmflat::Id>>,
+    mut hilbert_node_pairs: Option<flatdata::ExternalVector<osmflat::HilbertNodePair>>,
     blocks: Vec<BlockIndex>,
     data: &[u8],
     tags: &mut TagSerializer,
@@ -429,6 +439,7 @@ fn serialize_dense_node_blocks(
                 &mut nodes,
                 &mut node_ids,
                 &mut nodes_id_to_idx,
+                &mut hilbert_node_pairs,
                 stringtable,
                 tags,
             )?;
@@ -444,6 +455,9 @@ fn serialize_dense_node_blocks(
     nodes.close()?;
     if let Some(ids) = node_ids {
         ids.close()?;
+    }
+    if let Some(pairs) = hilbert_node_pairs {
+        pairs.close()?;
     }
     info!("Dense nodes converted.");
     info!("Building dense nodes index...");
@@ -660,10 +674,17 @@ fn run(args: args::Args) -> Result<(), Error> {
         relation_ids = Some(ids_archive.start_relations()?);
     }
 
+    let mut hilbert_node_pairs = None;
+    if args.hilbert {
+        info!("Using Hilbert location.");
+        hilbert_node_pairs = Some(builder.start_hilbert_node_pairs()?);
+    }
+
     let nodes_id_to_idx = serialize_dense_node_blocks(
         &builder,
         greatest_common_granularity,
         node_ids,
+        hilbert_node_pairs,
         pbf_dense_nodes,
         &input_data,
         &mut tags,

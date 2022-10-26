@@ -35,6 +35,7 @@ prost-types = "0.11.1"
 rayon = "1.4.1"
 ahash = "0.8.0"
 logging_timer = "1.1.0"
+fast_hilbert = "1.0.1"
 
 [build-dependencies]
 prost-build = "0.11.1"

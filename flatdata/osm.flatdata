@@ -263,7 +263,7 @@ archive Osm {
     nodes: vector<Node>;
 
     @optional
-    hilbert_node_pairs: vector<HilbertRelationPair>;
+    hilbert_node_pairs: vector<HilbertNodePair>;
 
     /**
      * List of ways.
@@ -278,7 +278,7 @@ archive Osm {
     ways: vector<Way>;
 
     @optional
-    hilbert_way_pairs: vector<HilbertRelationPair>;
+    hilbert_way_pairs: vector<HilbertWayPair>;
 
     /**
      * List of relations.

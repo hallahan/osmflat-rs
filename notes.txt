@@ -1,1 +1,1 @@
-flatdata-generator -s ../flatdata/osm.flatdata -g rust -O src/osmflat_generated.rs
+flatdata-generator -s ../flatdata/osm.flatdata -g rust -O ../osmflat/src/osmflat_generated.rs
