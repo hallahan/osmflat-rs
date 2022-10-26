@@ -23,6 +23,8 @@ use std::fs::File;
 use std::io;
 use std::str;
 
+use logging_timer::time;
+
 type Error = Box<dyn std::error::Error>;
 
 fn serialize_header(
@@ -579,6 +581,7 @@ fn gcd(a: i32, b: i32) -> i32 {
     y
 }
 
+#[time("info", "osmflatc")]
 fn run(args: args::Args) -> Result<(), Error> {
     let input_file = File::open(&args.input)?;
     let input_data = unsafe { Mmap::map(&input_file)? };

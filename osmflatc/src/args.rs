@@ -17,4 +17,7 @@ pub struct Args {
     /// Whether to compile the optional ids subs
     #[structopt(long = "ids")]
     pub ids: bool,
+
+    #[structopt(long = "hilbert")]
+    pub hilbert: bool,
 }

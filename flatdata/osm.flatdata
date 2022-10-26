@@ -91,12 +91,20 @@ struct NodeIndex {
     value: u64 : 40;
 }
 
+struct HilbertNodePair {
+    i: u64 : 40;
+    h: u64 : 64;
+}
+
 /**
  * A way is an ordered list of nodes.
  *
  * See <https://wiki.openstreetmap.org/wiki/Way>.
  */
 struct Way {
+    /// PointOnSurface Hilbert location of way.
+    h: u64: 64;
+
     /**
      * Range of tags attached to this node.
      *
@@ -111,6 +119,11 @@ struct Way {
      */
     @range(refs)
     ref_first_idx: u64 : 40;
+}
+
+struct HilbertWayPair {
+    i: u64 : 40;
+    h: u64 : 64;
 }
 
 /**
@@ -166,6 +179,9 @@ struct RelationMember {
  * See <https://wiki.openstreetmap.org/wiki/Relation>.
  */
 struct Relation {
+    // PointOnSurface Hilbert location of relation.
+    h: u64: 64;
+
     /**
      * Range of tags attached to this relation.
      *
@@ -173,6 +189,11 @@ struct Relation {
      */
     @range(tags)
     tag_first_idx: u64 : 40;
+}
+
+struct HilbertRelationPair {
+    i: u64 : 40;
+    h: u64 : 64;
 }
 
 struct Id {
@@ -241,6 +262,9 @@ archive Osm {
     @explicit_reference( Node.tag_first_idx, tags_index )
     nodes: vector<Node>;
 
+    @optional
+    hilbert_node_pairs: vector<HilbertRelationPair>;
+
     /**
      * List of ways.
      *
@@ -253,6 +277,9 @@ archive Osm {
     @explicit_reference( Way.ref_first_idx, nodes_index )
     ways: vector<Way>;
 
+    @optional
+    hilbert_way_pairs: vector<HilbertRelationPair>;
+
     /**
      * List of relations.
      *
@@ -262,6 +289,9 @@ archive Osm {
      */
     @explicit_reference( Relation.tag_first_idx, tags_index )
     relations: vector<Relation>;
+
+    @optional
+    hilbert_relation_pairs: vector<HilbertRelationPair>;
 
     /**
      * Members attached to relations.
