@@ -644,38 +644,38 @@ let value = value.unwrap_or(super::osm::INVALID_IDX);        flatdata_write_byte
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct HilbertNodePair {
-    data: [u8; 13],
+    data: [u8; 16],
 }
 
 impl HilbertNodePair {
     /// Unsafe since the struct might not be self-contained
     pub unsafe fn new_unchecked( ) -> Self {
-        Self{data : [0; 13]}
+        Self{data : [0; 16]}
     }
 }
 
 impl flatdata::Struct for HilbertNodePair {
     unsafe fn create_unchecked( ) -> Self {
-        Self{data : [0; 13]}
+        Self{data : [0; 16]}
     }
 
-    const SIZE_IN_BYTES: usize = 13;
+    const SIZE_IN_BYTES: usize = 16;
     const IS_OVERLAPPING_WITH_NEXT : bool = false;
 }
 
 impl HilbertNodePair {
     pub fn new( ) -> Self {
-        Self{data : [0; 13]}
+        Self{data : [0; 16]}
     }
 
     /// Create reference from byte array of matching size
-    pub fn from_bytes(data: &[u8; 13]) -> &Self {
+    pub fn from_bytes(data: &[u8; 16]) -> &Self {
         // Safety: This is safe since HilbertNodePair is repr(transparent)
         unsafe{ std::mem::transmute( data ) }
     }
 
     /// Create reference from byte array of matching size
-    pub fn from_bytes_mut(data: &mut [u8; 13]) -> &mut Self {
+    pub fn from_bytes_mut(data: &mut [u8; 16]) -> &mut Self {
         // Safety: This is safe since HilbertNodePair is repr(transparent)
         unsafe{ std::mem::transmute( data ) }
     }
@@ -683,11 +683,11 @@ impl HilbertNodePair {
     /// Create reference from byte array
     pub fn from_bytes_slice(data: &[u8]) -> Result<&Self, flatdata::ResourceStorageError> {
         // We cannot rely on TryFrom here, since it does not yet support > 33 bytes
-        if data.len() < 13 {
-            assert_eq!(data.len(), 13);
+        if data.len() < 16 {
+            assert_eq!(data.len(), 16);
             return Err(flatdata::ResourceStorageError::UnexpectedDataSize);
         }
-        let ptr = data.as_ptr() as *const [u8; 13];
+        let ptr = data.as_ptr() as *const [u8; 16];
         // Safety: We checked length before
         Ok(Self::from_bytes(unsafe { &*ptr }))
     }
@@ -695,16 +695,16 @@ impl HilbertNodePair {
     /// Create reference from byte array
     pub fn from_bytes_slice_mut(data: &mut [u8]) -> Result<&mut Self, flatdata::ResourceStorageError> {
         // We cannot rely on TryFrom here, since it does not yet support > 33 bytes
-        if data.len() < 13 {
-            assert_eq!(data.len(), 13);
+        if data.len() < 16 {
+            assert_eq!(data.len(), 16);
             return Err(flatdata::ResourceStorageError::UnexpectedDataSize);
         }
-        let ptr = data.as_ptr() as *mut [u8; 13];
+        let ptr = data.as_ptr() as *mut [u8; 16];
         // Safety: We checked length before
         Ok(Self::from_bytes_mut(unsafe { &mut *ptr }))
     }
 
-    pub fn as_bytes(&self) -> &[u8; 13] {
+    pub fn as_bytes(&self) -> &[u8; 16] {
         &self.data
     }
 }
@@ -720,13 +720,13 @@ unsafe impl flatdata::NoOverlap for HilbertNodePair {}
 impl HilbertNodePair {
     #[inline]
     pub fn i(&self) -> u64 {
-        let value = flatdata_read_bytes!(u64, self.data.as_ptr(), 0, 40);
+        let value = flatdata_read_bytes!(u64, self.data.as_ptr(), 0, 64);
         unsafe { std::mem::transmute::<u64, u64>(value) }
     }
 
     #[inline]
     pub fn h(&self) -> u64 {
-        let value = flatdata_read_bytes!(u64, self.data.as_ptr(), 40, 64);
+        let value = flatdata_read_bytes!(u64, self.data.as_ptr(), 64, 64);
         unsafe { std::mem::transmute::<u64, u64>(value) }
     }
 
@@ -751,13 +751,13 @@ impl HilbertNodePair {
     #[inline]
     #[allow(missing_docs)]
     pub fn set_i(&mut self, value: u64) {
-        flatdata_write_bytes!(u64; value, self.data, 0, 40)
+        flatdata_write_bytes!(u64; value, self.data, 0, 64)
     }
 
     #[inline]
     #[allow(missing_docs)]
     pub fn set_h(&mut self, value: u64) {
-        flatdata_write_bytes!(u64; value, self.data, 40, 64)
+        flatdata_write_bytes!(u64; value, self.data, 64, 64)
     }
 
 
@@ -2844,7 +2844,7 @@ struct Node
 namespace osm {
 struct HilbertNodePair
 {
-    i : u64 : 40;
+    i : u64 : 64;
     h : u64 : 64;
 }
 }
@@ -3048,7 +3048,7 @@ archive Osm
 pub const HILBERT_NODE_PAIRS: &str = r#"namespace osm {
 struct HilbertNodePair
 {
-    i : u64 : 40;
+    i : u64 : 64;
     h : u64 : 64;
 }
 }

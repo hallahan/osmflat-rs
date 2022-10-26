@@ -4,6 +4,7 @@ mod osmpbf;
 mod parallel;
 mod stats;
 mod strings;
+mod hilbert;
 
 use crate::osmpbf::{build_block_index, read_block, BlockIndex, BlockType};
 use crate::stats::Stats;
@@ -22,9 +23,9 @@ use std::collections::hash_map;
 use std::fs::File;
 use std::io;
 use std::str;
-use fast_hilbert::xy2h;
 
 use logging_timer::time;
+use fast_hilbert::xy2h;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -204,14 +205,14 @@ fn serialize_dense_nodes(
 
             lat += dense_nodes.lat[i];
             lon += dense_nodes.lon[i];
-            let lat_dm7 = ((lat_offset + (i64::from(pbf_granularity) * lat)) / granularity as i64) as i32;
-            let lon_dm7 = ((lon_offset + (i64::from(pbf_granularity) * lon)) / granularity as i64) as i32;
-            node.set_lat(lat_dm7);
-            node.set_lon(lon_dm7);
+            let lat_dm7 = (lat_offset + (i64::from(pbf_granularity) * lat)) / granularity as i64;
+            let lon_dm7 = (lon_offset + (i64::from(pbf_granularity) * lon)) / granularity as i64;
+            node.set_lat(lat_dm7 as i32);
+            node.set_lon(lon_dm7 as i32);
 
             if let Some(pairs) = hilbert_node_pairs {
-                let u_lon = (lon_dm7- i32::MIN) as u32;
-                let u_lat = (lat_dm7 as i32 - i32::MIN) as u32;
+                let u_lon = (lon_dm7 + i32::MAX as i64) as u32;
+                let u_lat = (lat_dm7 + i32::MAX as i64) as u32;
                 let pair = pairs.grow()?;
                 pair.set_i(index);
                 let h = xy2h(u_lon, u_lat);
@@ -729,6 +730,11 @@ fn run(args: args::Args) -> Result<(), Error> {
     info!("verified that osmflat archive can be opened.");
 
     println!("{}", stats);
+
+    if args.hilbert {
+        hilbert::process(&args.output)?;
+    }
+
     Ok(())
 }
 
