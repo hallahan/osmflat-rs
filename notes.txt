@@ -1,1 +1,3 @@
 flatdata-generator -s ../flatdata/osm.flatdata -g rust -O ../osmflat/src/osmflat_generated.rs
+
+cargo run -- /Users/n/geodata/extracts/santacruz.pbf /Users/n/geodata/flatdata/santacruz --hilbert
