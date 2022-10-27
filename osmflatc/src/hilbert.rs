@@ -1,16 +1,13 @@
 use core::mem::size_of;
-use core::slice::{from_raw_parts, from_raw_parts_mut};
 use core::ptr::copy_nonoverlapping;
-use std::cell::UnsafeCell;
-use std::sync::Arc;
-use std::sync::atomic::AtomicPtr;
+use core::slice::{from_raw_parts, from_raw_parts_mut};
 use osmflat::*;
 use std::time::Instant;
 
 use log::info;
 use memmap2::MmapMut;
 use rayon::prelude::*;
-use std::io::{Error, ErrorKind, Write};
+use std::io::{Error, ErrorKind};
 use std::{fs::OpenOptions, path::PathBuf};
 
 pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
@@ -38,71 +35,42 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     hilbert_node_pairs.par_sort_unstable_by_key(|idx| idx.h());
     info!("Finished in {} secs.", t.elapsed().as_secs());
 
-    // Get the original nodes vector to read from.
-    let nodes_len = archive.nodes().len();
-    let nodes_mmap = open_mmap(&dir, "nodes")?;
-    let nodes = unsafe { from_raw_parts(nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
+    // Reorder nodes
+    {
+        // Get the original nodes vector to read from.
+        let nodes_len = archive.nodes().len();
+        let nodes_mmap: MmapMut = open_mmap(&dir, "nodes")?;
+        let nodes: &[Node] = unsafe { from_raw_parts(nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
 
-    // Setup new nodes vector to place sorted nodes into.
-    let mut sorted_nodes_mmap = create_mmap(&dir, "sorted_nodes", 8 + size_of::<Node>() * nodes_len)?;
-    
-    // Copy the header from the original nodes vector into the sorted nodes vector.
-    unsafe {
-        copy_nonoverlapping(nodes_mmap[..8].as_ptr(), sorted_nodes_mmap[..8].as_mut_ptr(), 8)
+        // Setup new nodes vector to place sorted nodes into.
+        let mut sorted_nodes_mmap =
+            create_mmap(&dir, "sorted_nodes", 8 + size_of::<Node>() * nodes_len)?;
+
+        // Copy the header from the original nodes vector into the sorted nodes vector.
+        unsafe {
+            copy_nonoverlapping(
+                nodes_mmap[..8].as_ptr(),
+                sorted_nodes_mmap[..8].as_mut_ptr(),
+                8,
+            )
+        }
+
+        // Cast buffer to slice of Nodes.
+        let sorted_nodes: &mut [Node] =
+            unsafe { from_raw_parts_mut(sorted_nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
+
+        info!("Reordering nodes.");
+        let t = Instant::now();
+        sorted_nodes
+            .par_iter_mut()
+            .zip(hilbert_node_pairs.par_iter_mut())
+            .for_each(|(sorted_node, hilbert_node_pair)| {
+                let i = hilbert_node_pair.i() as usize;
+                let node = &nodes[i];
+                sorted_node.fill_from(node);
+            });
+        info!("Finished in {} secs.", t.elapsed().as_secs());
     }
-
-    let sorted_nodes =
-        unsafe { from_raw_parts_mut(sorted_nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
-
-    info!("Copying nodes to sorted nodes vector.");
-    let t = Instant::now();
-
-    // Parallel iteration via zip
-    // Finished in 2 secs.
-    sorted_nodes.par_iter_mut().zip(hilbert_node_pairs.par_iter_mut()).for_each(|(sorted_node, hilbert_node_pair)| {
-        let i = hilbert_node_pair.i() as usize;
-        let node = &nodes[i];
-        sorted_node.fill_from(node);
-    });
-
-    // Parallel iteration
-    // Finished in 3 secs.
-    // sorted_nodes.par_iter_mut().enumerate().for_each(|(sorted_i, sorted_node)| {
-    //     let i = hilbert_node_pairs[sorted_i].i() as usize;
-    //     let node = &nodes[i];
-    //     sorted_node.fill_from(node);
-    // });
-
-    // Serial iteration
-    // Finished in 12 secs.
-    // let mut sorted_i: usize = 0;
-    // for pair in hilbert_node_pairs {
-    //     let i = pair.i() as usize;
-    //     let node = &nodes[i];
-    //     sorted_nodes[sorted_i].fill_from(node);
-    //     sorted_i += 1;
-    // }
-
-    // Append to new file
-    // Very slow.
-    // let mut f = OpenOptions::new()
-    //     .read(true)
-    //     .write(true)
-    //     .create(true)
-    //     .open(dir.join("sorted_nodes_appended"))?;
-
-    // for p in hilbert_node_pairs {
-    //     let i = p.i() as usize;
-    //     let n: &Node = &nodes[i];
-    //     let b: &[u8] = unsafe {
-    //         from_raw_parts((n as *const Node) as *const u8, size_of::<Node>())
-    //     };
-    //     f.write_all(b)?;
-    // }
-
-    info!("Finished in {} secs.", t.elapsed().as_secs());
-
-    
 
     Ok(())
 }
