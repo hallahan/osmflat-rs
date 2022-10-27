@@ -1,5 +1,5 @@
-use logging_timer::{finish, timer};
 use osmflat::*;
+use std::time::{Duration, Instant};
 
 use log::info;
 use memmap2::MmapMut;
@@ -44,9 +44,12 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     // }
 
     info!("Sorting hilbert node pairs...");
-    let t = timer!("info", "Sort hilbert node pairs.");
+    let t = Instant::now();
     hilbert_node_pairs.par_sort_unstable_by_key(|idx| idx.h());
-    finish!(t, "Finished sorting hilbert node pairs");
+    info!(
+        "Finished sorting hilbert node pairs in {} secs.",
+        t.elapsed().as_secs()
+    );
 
     Ok(())
 }
