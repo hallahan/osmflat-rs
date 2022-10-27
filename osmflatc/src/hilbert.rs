@@ -1,5 +1,6 @@
 use core::mem::size_of;
 use core::slice::from_raw_parts_mut;
+use core::ptr::copy_nonoverlapping;
 use osmflat::*;
 use std::time::Instant;
 
@@ -24,8 +25,8 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         )));
     }
 
-    let mut b = open_mmap(&dir, "hilbert_node_pairs")?;
-    let slc = &mut b[8..];
+    let mut mmap = open_mmap(&dir, "hilbert_node_pairs")?;
+    let slc = &mut mmap[8..];
     let hilbert_node_pairs =
         unsafe { from_raw_parts_mut(slc.as_ptr() as *mut HilbertNodePair, hilbert_node_pairs_len) };
 
@@ -36,14 +37,17 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
     // Get the original nodes vector to read from.
     let nodes_len = archive.nodes().len();
-    let nodes_mmmap = open_mmap(&dir, "nodes")?;
-    let nodes = unsafe { from_raw_parts_mut(nodes_mmmap[8..].as_ptr() as *mut Node, nodes_len) };
+    let nodes_mmap = open_mmap(&dir, "nodes")?;
+    let nodes = unsafe { from_raw_parts_mut(nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
 
     // Setup new nodes vector to place sorted nodes into.
-    let mut sorted_nodes_mmap =
-        create_mmap(&dir, "sorted_nodes", 8 + size_of::<Node>() * nodes_len)?;
-    // Copy header data
-    sorted_nodes_mmap.copy_from_slice(&nodes_mmmap[..8]);
+    let mut sorted_nodes_mmap = create_mmap(&dir, "sorted_nodes", 8 + size_of::<Node>() * nodes_len)?;
+    
+    // Copy the header from the original nodes vector into the sorted nodes vector.
+    unsafe {
+        copy_nonoverlapping(nodes_mmap[..8].as_ptr(), sorted_nodes_mmap[..8].as_mut_ptr(), 8)
+    }
+
     // let sorted_nodes =
     //     unsafe { from_raw_parts_mut(sorted_nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
     let sorted_nodes_ptr = sorted_nodes_mmap[8..].as_ptr() as *mut Node;
