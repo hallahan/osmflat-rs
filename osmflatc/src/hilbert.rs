@@ -35,42 +35,82 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     hilbert_node_pairs.par_sort_unstable_by_key(|idx| idx.h());
     info!("Finished in {} secs.", t.elapsed().as_secs());
 
-    // Reorder nodes
-    {
-        // Get the original nodes vector to read from.
-        let nodes_len = archive.nodes().len();
-        let nodes_mmap: MmapMut = open_mmap(&dir, "nodes")?;
-        let nodes: &[Node] = unsafe { from_raw_parts(nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
+    // -- Initialize tags_index and sorted_tags_index
 
-        // Setup new nodes vector to place sorted nodes into.
-        let mut sorted_nodes_mmap =
-            create_mmap(&dir, "sorted_nodes", 8 + size_of::<Node>() * nodes_len)?;
-
-        // Copy the header from the original nodes vector into the sorted nodes vector.
-        unsafe {
-            copy_nonoverlapping(
-                nodes_mmap[..8].as_ptr(),
-                sorted_nodes_mmap[..8].as_mut_ptr(),
-                8,
-            )
-        }
-
-        // Cast buffer to slice of Nodes.
-        let sorted_nodes: &mut [Node] =
-            unsafe { from_raw_parts_mut(sorted_nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
-
-        info!("Reordering nodes.");
-        let t = Instant::now();
-        sorted_nodes
-            .par_iter_mut()
-            .zip(hilbert_node_pairs.par_iter_mut())
-            .for_each(|(sorted_node, hilbert_node_pair)| {
-                let i = hilbert_node_pair.i() as usize;
-                let node = &nodes[i];
-                sorted_node.fill_from(node);
-            });
-        info!("Finished in {} secs.", t.elapsed().as_secs());
+    // Setup new tags_index vector to place list of tags as we reorder the entities.
+    // The sorted index will be built up as we work through the OSM entities.
+    let tags_index = archive.tags_index();
+    let tags_index_len = tags_index.len();
+    let tags_index_mmap: MmapMut = open_mmap(&dir, "tags_index")?;
+    let mut sorted_tags_index_mmap = create_mmap(
+        &dir,
+        "sorted_tags_index",
+        8 + size_of::<TagIndex>() * tags_index_len,
+    )?;
+    // Copy the header from the original nodes vector into the sorted nodes vector.
+    unsafe {
+        copy_nonoverlapping(
+            tags_index_mmap[..8].as_ptr(),
+            sorted_tags_index_mmap[..8].as_mut_ptr(),
+            8,
+        )
     }
+    // Cast buffer to slice of TagIndex
+    let sorted_tags_index: &mut [TagIndex] = unsafe {
+        from_raw_parts_mut(
+            sorted_tags_index_mmap[8..].as_ptr() as *mut TagIndex,
+            tags_index_len,
+        )
+    };
+    let mut tag_counter: usize = 0;
+
+    // -- Reorder nodes.
+
+    // Get the original nodes vector to read from.
+    let nodes: &[Node] = archive.nodes();
+    let nodes_len = nodes.len();
+    let nodes_mmap: MmapMut = open_mmap(&dir, "nodes")?;
+
+    // Setup new nodes vector to place sorted nodes into.
+    let mut sorted_nodes_mmap =
+        create_mmap(&dir, "sorted_nodes", 8 + size_of::<Node>() * nodes_len)?;
+
+    // Copy the header from the original nodes vector into the sorted nodes vector.
+    unsafe {
+        copy_nonoverlapping(
+            nodes_mmap[..8].as_ptr(),
+            sorted_nodes_mmap[..8].as_mut_ptr(),
+            8,
+        )
+    }
+    // Cast buffer to slice of Nodes.
+    let sorted_nodes: &mut [Node] =
+        unsafe { from_raw_parts_mut(sorted_nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
+
+    info!("Reordering nodes.");
+    let t = Instant::now();
+    sorted_nodes
+        .iter_mut()
+        .zip(hilbert_node_pairs.iter_mut())
+        .for_each(|(sorted_node, hilbert_node_pair)| {
+            let i = hilbert_node_pair.i() as usize;
+            let node = &nodes[i];
+            
+            let start = node.tag_first_idx() as usize;
+            let end = node.tags().end as usize;
+            
+            for t in &tags_index[start..end] {
+                sorted_tags_index[tag_counter].fill_from(t);
+                tag_counter += 1;
+            }
+
+            sorted_node.fill_from(node);
+            sorted_node.set_tag_first_idx(start as u64);
+        });
+    info!("Finished in {} secs.", t.elapsed().as_secs());
+
+    // 
+
 
     Ok(())
 }
