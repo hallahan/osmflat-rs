@@ -60,8 +60,12 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     info!("Finished in {} secs.", t.elapsed().as_secs());
 
     let hilbert_node_pairs_mmap = open_mmap(&dir, "hilbert_node_pairs")?;
-    let hilbert_node_pairs =
-        unsafe { from_raw_parts_mut(hilbert_node_pairs_mmap[8..].as_ptr() as *mut HilbertNodePair, hilbert_node_pairs_len) };
+    let hilbert_node_pairs = unsafe {
+        from_raw_parts_mut(
+            hilbert_node_pairs_mmap[8..].as_ptr() as *mut HilbertNodePair,
+            hilbert_node_pairs_len,
+        )
+    };
 
     info!("Sorting hilbert node pairs.");
     let t = Instant::now();
