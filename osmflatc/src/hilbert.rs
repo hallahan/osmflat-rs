@@ -286,7 +286,7 @@ pub fn build_hilbert_way_pairs(
         .par_iter_mut()
         .enumerate()
         .for_each(|(i, pair)| {
-            let way = &archive.ways()[i];
+            let way = &ways[i];
 
             // Calculate point on surface.
             // http://libgeos.org/doxygen/classgeos_1_1algorithm_1_1InteriorPointArea.html
@@ -331,3 +331,58 @@ pub fn build_hilbert_way_pairs(
     info!("Finished in {} secs.", t.elapsed().as_secs());
     Ok(())
 }
+
+// Relation logic is complicated. Need to implement.
+// pub fn build_hilbert_relation_pairs(
+//     hilbert_relation_pairs: &mut [HilbertRelationPair],
+//     archive: &Osm,
+// ) -> Result<(), Box<dyn std::error::Error>> {
+//     let nodes = archive.nodes();
+//     let nodes_index = archive.nodes_index();
+//     let ways = archive.ways();
+//     let relations = archive.relations();
+//     let all_members = archive.relation_members();
+
+//     info!("Building hilbert relation pairs.");
+//     let t = Instant::now();
+
+//     hilbert_relation_pairs
+//         .par_iter_mut()
+//         .enumerate()
+//         .for_each(|(i, pair)| {
+//             // why mutable?
+//             let mut members = all_members.at(i);
+            
+//             // For now we are just picking the hilbert point on surface location for some member,
+//             // prioritizing ways. It might be good to keep this simple?
+
+//             let way = members.find(|m| {
+//                 match m {
+//                     RelationMembersRef::WayMember(_) => true,
+//                     RelationMembersRef::NodeMember(_) => false,
+//                     RelationMembersRef::RelationMember(_) => false,
+//                 }
+//             } );
+
+//             if let Some(m) = way {
+
+//             }
+
+//             let node = members.find(|m| {
+//                 match m {
+//                     RelationMembersRef::WayMember(_) => false,
+//                     RelationMembersRef::NodeMember(_) => true,
+//                     RelationMembersRef::RelationMember(_) => false,
+//                 }
+//             } );
+
+//             if let Some(node) = node {
+
+//             }
+
+            
+//         });
+
+//     info!("Finished in {} secs.", t.elapsed().as_secs());
+//     Ok(())
+// }
