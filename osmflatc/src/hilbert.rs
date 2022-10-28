@@ -33,7 +33,10 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     // We already know the hilbert location for nodes.
     // We could actually do that work here and decouple it from osmflatc completely...
     // We need to know the hilbert location for ways and relations.
+    info!("Creating hilbert way pairs...");
+    let t = Instant::now();
     build_hilbert_way_pairs(dir, &archive)?;
+    info!("Finished in {} secs.", t.elapsed().as_secs());
 
     let mut mmap = open_mmap(&dir, "hilbert_node_pairs")?;
     let slc = &mut mmap[8..];
@@ -171,8 +174,8 @@ pub fn build_hilbert_way_pairs(
 
     // let mut hilbert_way_pairs = builder.start_hilbert_way_pairs()?;
 
-    ways.iter().enumerate().for_each(|(i, way)| {
-        let pair = &mut hilbert_way_pairs[i];
+    hilbert_way_pairs.par_iter_mut().enumerate().for_each(|(i, pair)| {
+        let way = &archive.ways()[i];
 
         // calculate point on surface
         // http://libgeos.org/doxygen/classgeos_1_1algorithm_1_1InteriorPointArea.html
