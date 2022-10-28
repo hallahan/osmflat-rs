@@ -30,22 +30,47 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         )));
     }
 
+    let ways_len = archive.ways().len();
+
+    let hilbert_way_pairs_mmap = create_mmap(
+        dir,
+        "hilbert_way_pairs",
+        8 + size_of::<HilbertWayPair>() * ways_len,
+    )?;
+
+    // What is usually put in those first 8 bytes?
+    // unsafe {
+    //     copy_nonoverlapping(mmap[..8].as_ptr(), mmap[..8].as_mut_ptr(), 8);
+    // }
+
+    // Cast buffer to slice of HilbertWayPairs.
+    let hilbert_way_pairs: &mut [HilbertWayPair] = unsafe {
+        from_raw_parts_mut(
+            hilbert_way_pairs_mmap[8..].as_ptr() as *mut HilbertWayPair,
+            ways_len,
+        )
+    };
+
     // We already know the hilbert location for nodes.
     // We could actually do that work here and decouple it from osmflatc completely...
     // We need to know the hilbert location for ways and relations.
-    info!("Creating hilbert way pairs...");
+    info!("Building hilbert way pairs.");
     let t = Instant::now();
-    build_hilbert_way_pairs(dir, &archive)?;
+    build_hilbert_way_pairs(hilbert_way_pairs, &archive)?;
     info!("Finished in {} secs.", t.elapsed().as_secs());
 
-    let mut mmap = open_mmap(&dir, "hilbert_node_pairs")?;
-    let slc = &mut mmap[8..];
+    let hilbert_node_pairs_mmap = open_mmap(&dir, "hilbert_node_pairs")?;
     let hilbert_node_pairs =
-        unsafe { from_raw_parts_mut(slc.as_ptr() as *mut HilbertNodePair, hilbert_node_pairs_len) };
+        unsafe { from_raw_parts_mut(hilbert_node_pairs_mmap[8..].as_ptr() as *mut HilbertNodePair, hilbert_node_pairs_len) };
 
-    info!("Sorting hilbert node pairs...");
+    info!("Sorting hilbert node pairs.");
     let t = Instant::now();
     hilbert_node_pairs.par_sort_unstable_by_key(|idx| idx.h());
+    info!("Finished in {} secs.", t.elapsed().as_secs());
+
+    info!("Sorting hilbert way pairs.");
+    let t = Instant::now();
+    hilbert_way_pairs.par_sort_unstable_by_key(|idx| idx.h());
     info!("Finished in {} secs.", t.elapsed().as_secs());
 
     // -- Initialize tags_index and sorted_tags_index --
@@ -108,7 +133,6 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .for_each(|(sorted_node, hilbert_node_pair)| {
             let i = hilbert_node_pair.i() as usize;
             let node = &nodes[i];
-
             let start = node.tag_first_idx() as usize;
             let end = node.tags().end as usize;
 
@@ -149,72 +173,58 @@ fn create_mmap(dir: &PathBuf, file_name: &str, size: usize) -> std::io::Result<M
 }
 
 pub fn build_hilbert_way_pairs(
-    dir: &PathBuf,
+    hilbert_way_pairs: &mut [HilbertWayPair],
     archive: &Osm,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let nodes = archive.nodes();
     let nodes_index = archive.nodes_index();
     let ways = archive.ways();
-    let len = ways.len();
 
-    let mmap = create_mmap(
-        dir,
-        "hilbert_way_pairs",
-        8 + size_of::<HilbertWayPair>() * len,
-    )?;
+    hilbert_way_pairs
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i, pair)| {
+            let way = &archive.ways()[i];
 
-    // What is usually put in those first 8 bytes?
-    // unsafe {
-    //     copy_nonoverlapping(mmap[..8].as_ptr(), mmap[..8].as_mut_ptr(), 8);
-    // }
+            // Calculate point on surface.
+            // http://libgeos.org/doxygen/classgeos_1_1algorithm_1_1InteriorPointArea.html
+            // https://docs.rs/geo/latest/geo/algorithm/interior_point/trait.InteriorPoint.html
+            // https://github.com/georust/geo/blob/main/geo/src/algorithm/interior_point.rs
 
-    // Cast buffer to slice of Nodes.
-    let hilbert_way_pairs: &mut [HilbertWayPair] =
-        unsafe { from_raw_parts_mut(mmap[8..].as_ptr() as *mut HilbertWayPair, len) };
+            let refs = way.refs();
+            let len = refs.end - refs.start;
+            let mut coords = Vec::<Coordinate<f64>>::with_capacity(len as usize);
 
-    // let mut hilbert_way_pairs = builder.start_hilbert_way_pairs()?;
+            for r in refs {
+                if let Some(idx) = nodes_index[r as usize].value() {
+                    let node = &nodes[idx as usize];
+                    let lon = node.lon() as f64;
+                    let lat = node.lat() as f64;
+                    coords.push(coord! { x: lon, y: lat });
+                };
+            }
 
-    hilbert_way_pairs.par_iter_mut().enumerate().for_each(|(i, pair)| {
-        let way = &archive.ways()[i];
-
-        // calculate point on surface
-        // http://libgeos.org/doxygen/classgeos_1_1algorithm_1_1InteriorPointArea.html
-        // https://docs.rs/geo/latest/geo/algorithm/interior_point/trait.InteriorPoint.html
-        // https://github.com/georust/geo/blob/main/geo/src/algorithm/interior_point.rs
-
-        let refs = way.refs();
-        let len = refs.end - refs.start;
-        let mut coords = Vec::<Coordinate<f64>>::with_capacity(len as usize);
-
-        for r in refs {
-            if let Some(idx) = nodes_index[r as usize].value() {
-                let node = &nodes[idx as usize];
-                let lon = node.lon() as f64;
-                let lat = node.lat() as f64;
-                coords.push(coord! { x: lon, y: lat });
+            let location = if coords.first() == coords.last() {
+                Polygon::new(LineString::new(coords), vec![]).interior_point()
+            } else {
+                LineString::new(coords).interior_point()
             };
-        }
 
-        let location = if coords.first() == coords.last() {
-            Polygon::new(LineString::new(coords), vec![]).interior_point()
-        } else {
-            LineString::new(coords).interior_point()
-        };
+            if let Some(loc) = location {
+                let x = (loc.x() as i64 + i32::MAX as i64) as u32;
+                let y = (loc.x() as i64 + i32::MAX as i64) as u32;
+                // info!("way point on surface {:#?}", loc);
+                let h = xy2h(x, y);
 
-        if let Some(loc) = location {
-            let x = (loc.x() as i64 + i32::MAX as i64) as u32;
-            let y = (loc.x() as i64 + i32::MAX as i64) as u32;
-            let h = xy2h(x, y);
-
-            pair.set_i(i as u64);
-            pair.set_h(h);
-        } else {
-            eprintln!(
+                pair.set_i(i as u64);
+                pair.set_h(h);
+            } else {
+                eprintln!(
                 "Unable to find point on surface to compute hilbert location for way at index {}.",
                 i
             );
-        }
-    });
+            }
+        });
 
     Ok(())
 }
