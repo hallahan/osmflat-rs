@@ -82,14 +82,18 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     // Setup new tags_index vector to place list of tags as we reorder the entities.
     // The sorted index will be built up as we work through the OSM entities.
     let tags_index = archive.tags_index();
+    let nodes_index = archive.nodes_index();
     let tags_index_len = tags_index.len();
+    let nodes_index_len = nodes_index.len();
     let tags_index_mmap: MmapMut = open_mmap(&dir, "tags_index")?;
+    let nodes_index_mmap: MmapMut = open_mmap(&dir, "nodes_index")?;
+
     let mut sorted_tags_index_mmap = create_mmap(
         &dir,
         "sorted_tags_index",
         8 + size_of::<TagIndex>() * tags_index_len,
     )?;
-    // Copy the header from the original nodes vector into the sorted nodes vector.
+
     unsafe {
         copy_nonoverlapping(
             tags_index_mmap[..8].as_ptr(),
@@ -104,7 +108,29 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             tags_index_len,
         )
     };
+
+    let mut sorted_nodes_index_mmap = create_mmap(
+        &dir,
+        "sorted_nodes_index",
+        8 + size_of::<NodeIndex>() * nodes_index_len,
+    )?;
+
+    unsafe {
+        copy_nonoverlapping(
+            nodes_index_mmap[..8].as_ptr(),
+            sorted_nodes_index_mmap[..8].as_mut_ptr(),
+            8,
+        )
+    }
+    let sorted_nodes_index: &mut [NodeIndex] = unsafe {
+        from_raw_parts_mut(
+            sorted_nodes_index_mmap[8..].as_ptr() as *mut NodeIndex,
+            nodes_index_len,
+        )
+    };
+
     let mut tag_counter: usize = 0;
+    let mut nodes_index_counter: usize = 0;
 
     // -- Reorder nodes. --
 
@@ -140,17 +166,70 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             let start = node.tag_first_idx() as usize;
             let end = node.tags().end as usize;
 
+            let tag_first_idx = tag_counter;
             for t in &tags_index[start..end] {
                 sorted_tags_index[tag_counter].fill_from(t);
                 tag_counter += 1;
             }
 
             sorted_node.fill_from(node);
-            sorted_node.set_tag_first_idx(start as u64);
+            sorted_node.set_tag_first_idx(tag_first_idx as u64);
         });
     info!("Finished in {} secs.", t.elapsed().as_secs());
 
     // -- Reorder ways. --
+
+    // Get the original ways vector to read from.
+    let ways: &[Way] = archive.ways();
+    let ways_len = ways.len();
+    let ways_mmap: MmapMut = open_mmap(&dir, "ways")?;
+
+    // Setup new ways vector to place sorted ways into.
+    let mut sorted_ways_mmap = create_mmap(&dir, "sorted_ways", 8 + size_of::<Way>() * ways_len)?;
+
+    // Copy the header from the original ways vector into the sorted ways vector.
+    unsafe {
+        copy_nonoverlapping(
+            ways_mmap[..8].as_ptr(),
+            sorted_ways_mmap[..8].as_mut_ptr(),
+            8,
+        )
+    }
+    // Cast buffer to slice of Ways.
+    let sorted_ways: &mut [Way] =
+        unsafe { from_raw_parts_mut(sorted_ways_mmap[8..].as_ptr() as *mut Way, ways_len) };
+
+    info!("Reordering ways.");
+    let t = Instant::now();
+    sorted_ways
+        .iter_mut()
+        .zip(hilbert_way_pairs.iter_mut())
+        .for_each(|(sorted_way, hilbert_way_pair)| {
+            let i = hilbert_way_pair.i() as usize;
+            let way = &ways[i];
+            let start = way.tag_first_idx() as usize;
+            let end = way.tags().end as usize;
+
+            let tag_first_idx = tag_counter;
+            for t in &tags_index[start..end] {
+                sorted_tags_index[tag_counter].fill_from(t);
+                tag_counter += 1;
+            }
+
+            let ref_start = way.ref_first_idx() as usize;
+            let ref_end = way.refs().end as usize;
+
+            let nodes_first_idx = nodes_index_counter;
+            for r in &nodes_index[ref_start..ref_end] {
+                sorted_nodes_index[nodes_index_counter].fill_from(r);
+                nodes_index_counter += 1;
+            }
+
+            sorted_way.fill_from(way);
+            sorted_way.set_tag_first_idx(tag_first_idx as u64);
+            sorted_way.set_ref_first_idx(nodes_first_idx as u64);
+        });
+    info!("Finished in {} secs.", t.elapsed().as_secs());
 
     Ok(())
 }
