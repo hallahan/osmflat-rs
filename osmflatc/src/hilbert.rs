@@ -1,19 +1,19 @@
 use core::mem::size_of;
 use core::ptr::copy_nonoverlapping;
-use core::slice::{from_raw_parts, from_raw_parts_mut};
+use core::slice::from_raw_parts_mut;
+use std::sync::atomic::AtomicU64;
 use fast_hilbert::xy2h;
-use geo::{coord, polygon, Polygon};
-use itertools::Itertools;
+use geo::algorithm::interior_point::InteriorPoint;
+use geo::geometry::{Coordinate, LineString};
+use geo::{coord, Polygon};
 use log::info;
 use memmap2::MmapMut;
 use osmflat::*;
+use pbr::ProgressBar;
 use rayon::prelude::*;
 use std::io::{Error, ErrorKind};
 use std::time::Instant;
 use std::{fs::OpenOptions, path::PathBuf};
-
-use geo::algorithm::interior_point::InteriorPoint;
-use geo::geometry::{Coordinate, LineString};
 
 pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let archive: Osm = Osm::open(FileResourceStorage::new(dir.clone()))?;
@@ -52,12 +52,11 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // We already know the hilbert location for nodes.
-    // We could actually do that work here and decouple it from osmflatc completely...
+    // We could actually do that work here and decouple it from osmflatc completely,
+    // but an extra loop over the nodes especially will take longer.
     // We need to know the hilbert location for ways and relations.
-    info!("Building hilbert way pairs.");
-    let t = Instant::now();
     build_hilbert_way_pairs(hilbert_way_pairs, &archive)?;
-    info!("Finished in {} secs.", t.elapsed().as_secs());
+
 
     let hilbert_node_pairs_mmap = open_mmap(&dir, "hilbert_node_pairs")?;
     let hilbert_node_pairs = unsafe {
@@ -155,8 +154,12 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let sorted_nodes: &mut [Node] =
         unsafe { from_raw_parts_mut(sorted_nodes_mmap[8..].as_ptr() as *mut Node, nodes_len) };
 
-    info!("Reordering nodes.");
+    let mut prog_counter: usize = 0;
+    let prog_len = (nodes_len / 1_000_000) as u64;
+    let mut pb = ProgressBar::new(prog_len as u64);
+    pb.message("Reordering nodes.");
     let t = Instant::now();
+
     sorted_nodes
         .iter_mut()
         .zip(hilbert_node_pairs.iter_mut())
@@ -174,6 +177,10 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
             sorted_node.fill_from(node);
             sorted_node.set_tag_first_idx(tag_first_idx as u64);
+            if i / 1_000_000 > prog_counter {
+                pb.inc();
+                prog_counter += 1;
+            }
         });
     info!("Finished in {} secs.", t.elapsed().as_secs());
 
@@ -198,9 +205,13 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     // Cast buffer to slice of Ways.
     let sorted_ways: &mut [Way] =
         unsafe { from_raw_parts_mut(sorted_ways_mmap[8..].as_ptr() as *mut Way, ways_len) };
-
-    info!("Reordering ways.");
-    let t = Instant::now();
+    
+    let mut prog_counter: usize = 0;
+    let prog_len = (ways_len / 1_000_000) as u64;
+    let mut pb = ProgressBar::new(prog_len as u64);
+    pb.message("Reordering ways.");
+    let t = Instant::now();  
+    
     sorted_ways
         .iter_mut()
         .zip(hilbert_way_pairs.iter_mut())
@@ -228,6 +239,11 @@ pub fn process(dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             sorted_way.fill_from(way);
             sorted_way.set_tag_first_idx(tag_first_idx as u64);
             sorted_way.set_ref_first_idx(nodes_first_idx as u64);
+
+            if i / 1_000_000 > prog_counter {
+                pb.inc();
+                prog_counter += 1;
+            }
         });
     info!("Finished in {} secs.", t.elapsed().as_secs());
 
@@ -262,6 +278,9 @@ pub fn build_hilbert_way_pairs(
     let nodes = archive.nodes();
     let nodes_index = archive.nodes_index();
     let ways = archive.ways();
+
+    info!("Building hilbert way pairs.");
+    let t = Instant::now();
 
     hilbert_way_pairs
         .par_iter_mut()
@@ -309,5 +328,6 @@ pub fn build_hilbert_way_pairs(
             }
         });
 
+    info!("Finished in {} secs.", t.elapsed().as_secs());
     Ok(())
 }

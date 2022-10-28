@@ -17,6 +17,7 @@ use itertools::Itertools;
 use log::info;
 use memmap2::Mmap;
 use pbr::ProgressBar;
+use std::time::Instant;
 
 use ahash::AHashMap;
 use std::collections::hash_map;
@@ -24,7 +25,6 @@ use std::fs::File;
 use std::io;
 use std::str;
 
-use logging_timer::time;
 use fast_hilbert::xy2h;
 
 type Error = Box<dyn std::error::Error>;
@@ -428,6 +428,7 @@ fn serialize_dense_node_blocks(
     let mut nodes = builder.start_nodes()?;
     let mut pb = ProgressBar::new(blocks.len() as u64);
     pb.message("Converting dense nodes...");
+    let t = Instant::now();
 
     parallel::parallel_process(
         blocks.into_iter(),
@@ -460,7 +461,7 @@ fn serialize_dense_node_blocks(
     if let Some(pairs) = hilbert_node_pairs {
         pairs.close()?;
     }
-    info!("Dense nodes converted.");
+    info!("Dense nodes converted in {} secs.", t.elapsed().as_secs());
     info!("Building dense nodes index...");
     let nodes_id_to_idx = nodes_id_to_idx.build();
     info!("Dense nodes index built.");
@@ -485,6 +486,7 @@ fn serialize_way_blocks(
     let mut pb = ProgressBar::new(blocks.len() as u64);
     let mut nodes_index = builder.start_nodes_index()?;
     pb.message("Converting ways...");
+    let t = Instant::now();
     parallel::parallel_process(
         blocks.into_iter(),
         |idx| {
@@ -522,7 +524,7 @@ fn serialize_way_blocks(
     }
     nodes_index.close()?;
 
-    info!("Ways converted.");
+    info!("Ways converted in {} secs", t.elapsed().as_secs());
     info!("Building ways index...");
     let ways_id_to_idx = ways_id_to_idx.build();
     info!("Way index built.");
@@ -550,6 +552,8 @@ fn serialize_relation_blocks(
 
     let mut pb = ProgressBar::new(blocks.len() as u64);
     pb.message("Converting relations...");
+    let t = Instant::now();
+
     parallel::parallel_process(
         blocks.into_iter(),
         |idx| read_block(data, &idx),
@@ -582,7 +586,7 @@ fn serialize_relation_blocks(
     }
     relation_members.close()?;
 
-    info!("Relations converted.");
+    info!("Relations converted in {} secs.", t.elapsed().as_secs());
 
     Ok(())
 }
@@ -596,7 +600,6 @@ fn gcd(a: i32, b: i32) -> i32 {
     y
 }
 
-#[time("info", "osmflatc")]
 fn run(args: args::Args) -> Result<(), Error> {
     let input_file = File::open(&args.input)?;
     let input_data = unsafe { Mmap::map(&input_file)? };
@@ -750,8 +753,10 @@ fn main() {
         .format_timestamp_nanos()
         .init();
 
+    let t = Instant::now();
     if let Err(e) = run(args) {
         eprintln!("{}: {}", "Error".red(), e);
         std::process::exit(1);
     }
+    info!("osmflatc total time: {:?}.", t.elapsed());
 }

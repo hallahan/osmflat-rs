@@ -34,7 +34,6 @@ prost-derive = "0.11.0"
 prost-types = "0.11.1"
 rayon = "1.4.1"
 ahash = "0.8.0"
-logging_timer = "1.1.0"
 fast_hilbert = "1.0.1"
 geo = "0.23.0"
 
